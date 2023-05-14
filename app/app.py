@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Literal, Dict
+from typing import Dict
 
 import json
 import subprocess
@@ -9,7 +9,10 @@ import shlex
 from pathlib import Path
 
 from pytube import YouTube, extract
-from utilities.video_utils import get_video_duration
+
+import nest_asyncio
+from pyngrok import ngrok
+import uvicorn
 
 app = FastAPI()
 
@@ -32,19 +35,38 @@ def download_video(video_url: str, video_id: str, output_path: Path):
 	if (len(filtered_videos) <= 0):
 		raise Exception("Videos with extensions other than .mp4 are not supported")
 	
-	low_res_videos = filtered_videos.filter(fps="30fps", resolution="480p")
-	if (len(low_res_videos) < 0):
-		raise Exception("Resolutions greater than 480p and FPS greater than 30fps not supported")
+	# low_res_videos = filtered_videos.filter(fps="30fps", resolution="480p")
+	# if (len(low_res_videos) < 0):
+	# 	raise Exception("Resolutions greater than 480p and FPS greater than 30fps not supported")
 
 	try:
-		low_res_videos.first().download(output_path=output_path.as_posix(), filename=f"{video_id}.mp4", max_retries=2)
+		filtered_videos.order_by("resolution").asc().first().download(output_path=output_path.as_posix(), filename=f"{video_id}.mp4", max_retries=2)
 	except:
 		raise Exception("Failed to download target video within maximum number of retries")
 
-def extract_features(feature_type: Literal["i3d", "vggish"], video_path: Path, output_path: Path):
-	cmd = shlex.split(f"/usr/local/envs/{feature_type}/bin/python main.py --feature_type {feature_type} --video_paths {video_path.as_posix()} --output_path {output_path.as_posix()}")
+def extract_features(feature_type, video_path: Path, output_path: Path):
+	cmd = shlex.split(f"/usr/local/envs/{feature_type}/bin/python main.py --feature_type {feature_type} --video_paths {video_path.as_posix()} --output_path {output_path.as_posix()} --extraction_fps 25 --on_extraction save_numpy --device_ids 0")
 	result = subprocess.run(cmd, cwd="/content/BMT/submodules/video_features", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 	print(result.stdout.decode("utf-8"))
+
+def which_ffprobe() -> str:
+    '''Determines the path to ffprobe library
+    Returns:
+        str -- path to the library
+    '''
+    result = subprocess.run(['which', 'ffprobe'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ffprobe_path = result.stdout.decode('utf-8').replace('\n', '')
+    return ffprobe_path
+
+def get_video_duration(path):
+	'''Determines the duration of the custom video
+	Returns:
+		float -- duration of the video in seconds'''
+	cmd = f'{which_ffprobe()} -hide_banner -loglevel panic -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {path}'
+	result = subprocess.run(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	video_duration = float(result.stdout.decode('utf-8').replace('\n', ''))
+	print('Video Duration:', video_duration)
+	return video_duration
 
 def predict_captions(video_duration: float, i3d_features_path: Dict[str, Path], vggish_features_path: Path, output_path: Path):
 	cmd = shlex.split(f"/usr/local/envs/bmt/bin/python /content/BMT/sample/single_video_prediction.py --duration_in_secs {video_duration} --rgb_features_path {i3d_features_path['rgb'].as_posix()} --flow_features_path {i3d_features_path['flow'].as_posix()} --vggish_features_path {vggish_features_path.as_posix()} --generated_captions_output_path {output_path.as_posix()}")
@@ -58,7 +80,7 @@ def read_json(json_path: Path):
 class Video(BaseModel):
 	url: str
 
-@app.get("/")
+@app.post("/")
 async def root(video: Video):
 	"""
 		- Get video URL
@@ -100,3 +122,12 @@ async def root(video: Video):
 	response = read_json(captions_file_path)
 
 	return response
+
+"""
+	RUN THE APP
+"""
+ngrok_tunnel = ngrok.connect(8000)
+print(f"Public URL: {ngrok_tunnel.public_url}")
+
+nest_asyncio.apply()
+uvicorn.run(app, port=8000)

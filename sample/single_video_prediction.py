@@ -5,6 +5,9 @@ import subprocess
 
 import numpy as np
 import torch
+import json
+
+ON_COLAB = os.getenv("ON_COLAB", False)
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from datasets.captioning_dataset import ActivityNetCaptionsDataset
@@ -256,30 +259,12 @@ def caption_proposals(
 
     return results
 
-def which_ffprobe() -> str:
-    '''Determines the path to ffprobe library
-    Returns:
-        str -- path to the library
-    '''
-    result = subprocess.run(['which', 'ffprobe'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    ffprobe_path = result.stdout.decode('utf-8').replace('\n', '')
-    return ffprobe_path
-
-def get_video_duration(path):
-    '''Determines the duration of the custom video
-    Returns:
-        float -- duration of the video in seconds'''
-    cmd = f'{which_ffprobe()} -hide_banner -loglevel panic' \
-          f' -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {path}'
-    result = subprocess.run(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    video_duration = float(result.stdout.decode('utf-8').replace('\n', ''))
-    print('Video Duration:', video_duration)
-    return video_duration
+# NOTE: Moved get_video_duration to utilities/video_utils.py
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='One video prediction')
-    parser.add_argument('--prop_generator_model_path', required=True)
-    parser.add_argument('--pretrained_cap_model_path', required=True)
+    parser.add_argument('--prop_generator_model_path', required=not ON_COLAB)
+    parser.add_argument('--pretrained_cap_model_path', required=not ON_COLAB)
     parser.add_argument('--vggish_features_path', required=True)
     parser.add_argument('--rgb_features_path', required=True)
     parser.add_argument('--flow_features_path', required=True)
@@ -287,7 +272,15 @@ if __name__ == "__main__":
     parser.add_argument('--device_id', type=int, default=0)
     parser.add_argument('--max_prop_per_vid', type=int, default=5)
     parser.add_argument('--nms_tiou_thresh', type=float, help='removed if tiou > nms_tiou_thresh. In (0, 1)')
+    parser.add_argument('--generated_captions_output_path')
     args = parser.parse_args()
+
+    # TODO: Add the rest of the params as defaults here
+    if ON_COLAB:
+        args.prop_generator_model_path = "/content/drive/MyDrive/FYP-2/checkpoints/train_prop/best_prop_model.pt"
+        args.pretrained_cap_model_path = "/content/drive/MyDrive/FYP-2/checkpoints/train_cap/best_cap_model.pt"
+        args.max_prop_per_video = 20
+        args.nms_tiou_thresh = 0.4
 
     feature_paths = {
         'audio': args.vggish_features_path,
@@ -313,6 +306,11 @@ if __name__ == "__main__":
         cap_model, feature_paths, train_dataset, cap_cfg, args.device_id, proposals, args.duration_in_secs
     )
 
-    print(captions)
+    # TODO: handle this better
+    try:
+        with open(args.generated_captions_output_path, "w") as out_file:
+            json.dump(captions, out_file, indent=4)
+    except:
+        print("Failed to write captions to out_file")
 
     # TODO: save original num of features (0th dim.) and just remove padding from them and trim accordingly

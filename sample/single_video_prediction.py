@@ -279,7 +279,7 @@ if __name__ == "__main__":
     if ON_COLAB:
         args.prop_generator_model_path = "/content/drive/MyDrive/FYP-2/checkpoints/train_prop/best_prop_model.pt"
         args.pretrained_cap_model_path = "/content/drive/MyDrive/FYP-2/checkpoints/train_cap/best_cap_model.pt"
-        args.max_prop_per_vid = 20
+        args.max_prop_per_vid = 9
         args.nms_tiou_thresh = 0.4
 
     feature_paths = {

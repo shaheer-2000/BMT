@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict
@@ -92,7 +92,10 @@ async def root(video: Video):
 	"""
 
 	video_url = video.url
-	video_id = extract.video_id(video_url)
+	try:
+		video_id = extract.video_id(video_url)
+	except:
+		raise HTTPException(status_code=400, detail={ "success": False, "reason": "Invalid YouTube URL provided" })
 
 	captions_file_path = CAPTIONS_OUT_DIR / f"{video_id}_captions.json"
 
@@ -103,8 +106,7 @@ async def root(video: Video):
 	try:
 		download_video(video_url, video_id, VIDEOS_OUT_DIR)
 	except Exception as e:
-		# TODO: respond with error here
-		return { "success": False, "reason": e.__str__() }
+		raise HTTPException(status_code=400, detail={ "success": False, "reason": e.__str__() })
 	
 	video_path = VIDEOS_OUT_DIR / f"{video_id}.mp4"
 

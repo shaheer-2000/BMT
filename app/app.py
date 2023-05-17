@@ -78,7 +78,7 @@ def read_json(json_path: Path):
 		return json.load(inp_file)
 
 class Video(BaseModel):
-	url: str
+	video_url: str
 
 @app.post("/")
 async def root(video: Video):
@@ -91,7 +91,7 @@ async def root(video: Video):
 		- Read and return as response the captions output file
 	"""
 
-	video_url = video.url
+	video_url = video.video_url
 	try:
 		video_id = extract.video_id(video_url)
 	except:
